@@ -32,6 +32,24 @@ str(admisi)
 #View(admisi)
 ```
 
+#data preprocessing
+```{r}
+profiling$IPK=gsub(",", ".", profiling$IPK)
+profiling$USIA=as.numeric(profiling$USIA)
+profiling$IPK=as.numeric(profiling$IPK)
+profiling$Ranking_Uni_Asal=as.numeric(profiling$Ranking_Uni_Asal)
+
+admisi$GRE=as.numeric(admisi$GRE)
+admisi$TOEFL=as.numeric(admisi$TOEFL)
+
+admisi$REKOM_LETTER=gsub(",", ".", admisi$REKOM_LETTER)
+admisi$REKOM_LETTER=as.numeric(admisi$REKOM_LETTER)
+
+admisi$MOT_LETTER=gsub(",", ".", admisi$MOT_LETTER)
+admisi$MOT_LETTER=as.numeric(admisi$MOT_LETTER)
+
+```
+
 #cek jumlah mising value
 ```{r}
 missing_values_profiling = sapply(profiling, function(x) sum(is.na(x)))
@@ -40,6 +58,7 @@ missing_values_profiling
 missing_values_admisi = sapply(admisi, function(x) sum(is.na(x)))
 missing_values_admisi
 ```
+
 #cek duplikat data
 ```{r}
 anyDuplicated(profiling)
@@ -48,4 +67,16 @@ anyDuplicated(admisi)
 describe(admisi)
 describe(profiling)
 ```
+
+#Meng merge kedua data
+```{r}
+datamerge=merge(profiling,admisi, by='ID')
+str(datamerge)
+```
+
+```{r}
+mising_value=sapply(datamerge, function(x) sum(is.na(x)))
+mising_value
+```
+
 
