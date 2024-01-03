@@ -5,10 +5,47 @@ output: html_notebook
 
 
 ```{r}
-library(ggplot2)
-library(metrix)
-library(Metrics)
-library(randomForest)
 library(dplyr)
+library(Metrics)
+library(ggplot2)
+library(boot)
+library(performanceEstimation)
+library(pROC)
+library(moments)
+library(outliers)
+library(caret)
+library(psych)
+library(corrplot)
+library(nortest)
+library(GGally)
+```
+
+#LOAD DATASET
+```{r}
+profiling=read.csv('profiling.csv', sep=';')
+admisi=read.csv('admisi.csv', sep=';')
+
+str(profiling)
+str(admisi)
+
+#View(profiling)
+#View(admisi)
+```
+
+#cek jumlah mising value
+```{r}
+missing_values_profiling = sapply(profiling, function(x) sum(is.na(x)))
+missing_values_profiling
+
+missing_values_admisi = sapply(admisi, function(x) sum(is.na(x)))
+missing_values_admisi
+```
+#cek duplikat data
+```{r}
+anyDuplicated(profiling)
+anyDuplicated(admisi)
+#eksplor dataset
+describe(admisi)
+describe(profiling)
 ```
 
