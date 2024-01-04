@@ -1,9 +1,9 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "UAS Bahasa R"
+author: "36220024 Michael Sannova & 36220013 Lucio Vincent Lim"
 ---
 
-
+#LOAD LIBRARY
 ```{r}
 library(dplyr)
 library(Metrics)
@@ -14,9 +14,7 @@ library(pROC)
 library(moments)
 library(outliers)
 library(caret)
-library(psych)
 library(corrplot)
-library(nortest)
 library(GGally)
 ```
 
@@ -24,15 +22,9 @@ library(GGally)
 ```{r}
 profiling=read.csv('profiling.csv', sep=';')
 admisi=read.csv('admisi.csv', sep=';')
-
-str(profiling)
-str(admisi)
-
-#View(profiling)
-#View(admisi)
 ```
 
-#data preprocessing
+#MENGUBAH DATA MENJADI NUMERIC
 ```{r}
 profiling$IPK=gsub(",", ".", profiling$IPK)
 profiling$USIA=as.numeric(profiling$USIA)
@@ -50,7 +42,7 @@ admisi$MOT_LETTER=as.numeric(admisi$MOT_LETTER)
 
 ```
 
-#cek jumlah mising value
+#CHECK MISSING VALUE PROFILING DAN ADMISI
 ```{r}
 missing_values_profiling = sapply(profiling, function(x) sum(is.na(x)))
 missing_values_profiling
@@ -59,18 +51,16 @@ missing_values_admisi = sapply(admisi, function(x) sum(is.na(x)))
 missing_values_admisi
 ```
 
-#cek duplikat data
+#CHECK DATA YANG SAMA DENGAN DUPLICATE
 ```{r}
 anyDuplicated(profiling)
 anyDuplicated(admisi)
-#eksplor dataset
-describe(admisi)
-describe(profiling)
 ```
 
-#Meng merge kedua data
+#MERGE KEDUA DATA
 ```{r}
 datamerge=merge(profiling,admisi, by='ID')
+datamerge
 str(datamerge)
 ```
 
@@ -79,4 +69,367 @@ mising_value=sapply(datamerge, function(x) sum(is.na(x)))
 mising_value
 ```
 
+#HANDLE MISSING VALUE DENGAN MEAN
+```{r}
+#MENGGANTI NILAI NA DENGAN MEAN
+str(datamerge)
+datamerge$Ranking_Uni_Asal[is.na(datamerge$Ranking_Uni_Asal)] = mean(datamerge$Ranking_Uni_Asal, na.rm = TRUE)
+datamerge$Ranking_Uni_Asal = as.numeric(datamerge$Ranking_Uni_Asal)
+datamerge$LULUS = factor(datamerge$LULUS, levels = c(1, 0), labels = c('Lulus', 'Tidak Lulus'))
+datamerge$RISET[is.na(datamerge$RISET)] = mean(datamerge$RISET, na.rm = TRUE)
+
+choices = c("Ya", "Tidak")
+kosong_index = which(datamerge$RISET == "")
+set.seed(123)
+jumlah_kosong = length(kosong_index)
+
+datamerge$RISET[kosong_index] <- sample(choices, jumlah_kosong, replace = TRUE)
+datamerge$RISET = factor(datamerge$RISET)
+
+```
+
+#OUTLIER
+```{r}
+#MENGGUNAKAN BOXPLOT
+boxplot(datamerge$IPK)
+boxplot(datamerge$GRE)
+boxplot(datamerge$USIA)
+boxplot(datamerge$TOEFL)
+boxplot(datamerge$MOT_LETTER)
+boxplot(datamerge$REKOM_LETTER)
+boxplot(datamerge$Ranking_Uni_Asal)
+```
+
+#MENGHAPUS OUTLIER
+```{r}
+# Terdapat outlier pada tabel IPK dan juga Rekom letter
+IQRipk = IQR(datamerge$IPK)
+upoutlier = quantile(datamerge$IPK, 0.75) + 1.5 * IQRipk 
+
+IQRrekom = IQR(datamerge$REKOM_LETTER)
+lowoutlier = quantile(datamerge$REKOM_LETTER, 0.25) - 1.5 * IQRrekom
+
+datamerge = subset(datamerge, datamerge$IPK <= upoutlier & datamerge$REKOM_LETTER >= lowoutlier)
+
+boxplot(datamerge$IPK)
+boxplot(datamerge$REKOM_LETTER)
+```
+
+
+#CORRELATION
+```{r}
+cor = cor(datamerge[, sapply(datamerge, is.numeric)])
+
+library(colorspace)
+ggplot(data = reshape2::melt(cor), aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_continuous_sequential(palette = "Blues 3", limits = c(-1,1), name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# MODELING
+```{r}
+library(randomForest)
+library(rpart)
+library(e1071)
+library(class)
+
+# Split train dan testing data
+set.seed(1123)  
+split_ratio = 0.8
+num_rows = nrow(datamerge)
+train_indices = sample(1:num_rows, size = round(split_ratio * num_rows))
+train_data = datamerge[train_indices, ]
+test_data = datamerge[-train_indices, ]
+
+```
+
+#1.RANDOM FOREST
+```{r}
+library(randomForest)
+Fselect = c("RISET", "REKOM_LETTER", "MOT_LETTER", "Ranking_Uni_Asal", "GRE", "TOEFL", "IPK")
+
+RForest = randomForest(factor(LULUS) ~ ., data = train_data [, c("LULUS", Fselect)], 
+                       ntree = 500, importance = TRUE)
+RFprediction = predict(RForest, newdata = test_data)
+RFconfmatrix = confusionMatrix(RFprediction, test_data$LULUS)
+RFaccuracy = RFconfmatrix$overall["Accuracy"]
+RFprecision = RFconfmatrix$byClass[["Pos Pred Value"]]
+print(paste(" RF Accuracy:", RFaccuracy))
+print(paste(" RF Precision:", RFprecision))
+```
+
+```{r}
+# Cek panjang vektor
+length(test_data$LULUS)
+length(RFprediction)  # Pastikan panjang kedua vektor sama
+
+# Cek missing value
+anyNA(test_data$LULUS)
+anyNA(RFprediction)  # Pastikan tidak ada missing value
+```
+
+# Curve ROC AUC Random Forest
+```{r}
+RFROC = roc(test_data$LULUS, as.numeric(RFprediction))
+
+print(paste("RF Accuracy:", RFaccuracy))
+print(paste("RF Precision:", RFprecision))
+
+# PLOT ROC RANDOM FOREST
+plot(RFROC, col = colorspace::sequential_hcl(2, palette = "Viridis"), main = "ROC Curve (Random Forest)", lwd = 2)
+abline(h = seq(0, 1, 0.1), v = seq(0, 1, 0.1), col = "black", lty = 3)
+
+# AUC
+RFAUC = auc(RFROC)
+print(paste("Random Forest AUC:", RFAUC))
+```
+
+#2. KNN
+```{r}
+library(class)
+KNNModel = knn(train_data[, c("Ranking_Uni_Asal", "IPK", "GRE", "TOEFL", "MOT_LETTER", "REKOM_LETTER")],
+                 test_data[, c("Ranking_Uni_Asal", "IPK", "GRE", "TOEFL", "MOT_LETTER", "REKOM_LETTER")],
+                 train_data$LULUS, k = 5)
+
+KNNconfmatrix = confusionMatrix(KNNModel, test_data$LULUS)
+KNNaccuracy = KNNconfmatrix$overall["Accuracy"]
+KNNprecision = KNNconfmatrix$byClass[["Pos Pred Value"]]
+
+print(paste("KNN Accuracy:", KNNaccuracy))
+print(paste("KNN Precision:", KNNprecision))
+```
+
+# Curve ROC AUC KNN
+```{r}
+
+KNNROC = roc(test_data$LULUS, as.numeric(KNNModel))
+
+print(paste("KNN Accuracy:", KNNaccuracy))
+print(paste("KNN Precision:", KNNprecision))
+
+# PLOT ROC KNN 
+plot(KNNROC, col = colorspace::sequential_hcl(2, palette = "Viridis"), main = "ROC Curve (KNN)", lwd = 2)
+abline(h = seq(0, 1, 0.1), v = seq(0, 1, 0.1), col = "black", lty = 3)
+
+# AUC
+KNNAUC = auc(KNNROC)
+print(paste("KNN AUC:", KNNAUC))
+```
+
+#3. DECISION TREE
+```{r}
+library(rpart)
+Fselect = c("RISET", "REKOM_LETTER", "MOT_LETTER", "Ranking_Uni_Asal", "GRE", "TOEFL", "IPK")
+DTreeModel = rpart(LULUS ~ ., data = train_data[, c("LULUS", Fselect)], method = "class")
+
+DTPrediction = predict(DTreeModel, newdata = test_data, type = "class")
+DTconfmatrix = confusionMatrix(DTPrediction, test_data$LULUS)
+DTaccuracy = DTconfmatrix$overall["Accuracy"]
+DTprecision = DTconfmatrix$byClass[["Pos Pred Value"]]
+
+print(paste("DTree Accuracy:", DTaccuracy))
+print(paste("DTree Precision:", DTprecision))
+```
+
+# Curve ROC dan AUC DECISION TREE
+```{r}
+
+DTROC = roc(test_data$LULUS, as.numeric(DTPrediction))
+print(paste("Decision Tree Accuracy:", DTaccuracy))
+print(paste("Decision Tree Precision:", DTPrediction))
+
+# PLOT ROC DECISION TREE
+plot(DTROC, col = colorspace::sequential_hcl(2, palette = "Viridis"), main = "ROC Curve (Decision Tree)", lwd = 2)
+abline(h = seq(0, 1, 0.1), v = seq(0, 1, 0.1), col = "black", lty = 3)
+
+# AUC
+DTAUC = auc(DTROC)
+print(paste("Decision Tree AUC:", DTAUC))
+```
+
+#4.NAIVE BEYES
+```{r}
+
+library(e1071)
+
+NBModel = naiveBayes(LULUS ~ ., data = train_data[, c("LULUS", Fselect)])
+
+NBPrediction = predict(NBModel, newdata = test_data)
+
+NBconfmatrix = confusionMatrix(NBPrediction, test_data$LULUS)
+
+NBaccuracy = NBconfmatrix$overall["Accuracy"]
+NBprecision = NBconfmatrix$byClass[["Pos Pred Value"]]
+
+print(paste("Naive Bayes Accuracy:", NBaccuracy))
+print(paste("Naive Bayes Precision:", NBprecision))
+```
+
+# Curve ROC AUC NAIVE BEYES
+```{r}
+NBROC = roc(test_data$LULUS, as.numeric(NBPrediction))
+
+print(paste("Naive Bayes Accuracy:", NBaccuracy))
+print(paste("Naive Bayes Precision:", NBprecision))
+
+# Plot ROC NAIVE BEYES
+plot(NBROC, col = colorspace::sequential_hcl(2, palette = "Viridis"), main = "ROC Curve (Naive Bayes)", lwd = 2)
+abline(h = seq(0, 1, 0.1), v = seq(0, 1, 0.1), col = "black", lty = 3)
+
+# AUC
+NBAUC = auc(NBROC)
+print(paste("Naive Bayes AUC:", NBAUC))
+```
+
+#5.Logistic Regresion
+```{r}
+train_data_lr <- train_data %>%
+  mutate(LULUS = ifelse(LULUS == "Lulus", 1, 0))
+
+# Model Logistic Regresion
+lr_model = glm(LULUS ~ ., data = train_data_lr[, c("LULUS", Fselect)], family = "binomial")
+
+# Model Prediction
+predictions_lr = predict(lr_model, newdata = test_data, type = "response")
+
+# Convert predicted probabilities to class labels
+predicted_classes_lr = ifelse(predictions_lr > 0.5, "Lulus", "Tidak Lulus")
+
+# Evaluate the model
+conf_matrix_lr <- confusionMatrix(factor(predicted_classes_lr), test_data$LULUS)
+accuracy_lr = conf_matrix_lr$overall["Accuracy"]
+precision_lr = conf_matrix_lr$byClass[["Pos Pred Value"]]
+
+# Display evaluation metrics
+print(paste("Logistic Regression Accuracy:", accuracy_lr))
+print(paste("Logistic Regression Precision:", precision_lr))
+```
+
+
+
+# Curve ROC AUC Logistic Regression
+```{r}
+# Calculate ROC
+LRROC <- roc(test_data$LULUS, LRprediction)
+
+# Display evaluation metrics
+print(paste("Logistic Regression Accuracy:", LRaccuracy))
+print(paste("Logistic Regression Precision:", LRprecision))
+
+# Plot ROC Logistic Regression
+plot(LRROC, col = colorspace::sequential_hcl(2, palette = "Viridis"), main = "ROC Curve (Logistic Regression)", lwd = 2)
+abline(h = seq(0, 1, 0.1), v = seq(0, 1, 0.1), col = "black", lty = 3)
+
+# AUC
+LRAUC <- auc(LRROC)
+print(paste("Logistic Regression AUC:", LRAUC))
+```
+
+# PERBANDINGAN AKURASI DAN PRESISI PADA SETIAP MODEL MENGGUNAKAN BAR CHART
+```{r}
+library(ggplot2)
+model_names = c("Random Forest", "Decision Tree", "KNN", "Naive Bayes", "Logistic Regresion")
+accuracies = c(RFaccuracy, DTaccuracy, KNNaccuracy, NBaccuracy, LRaccuracy)
+precisions = c(RFprecision, DTprecision, KNNprecision, NBprecision, LRprecision)
+
+model_metrics = data.frame(Model = model_names, Accuracy = accuracies, Precision = precisions)
+
+library(reshape2)
+
+model_metrics_melted = melt(model_metrics, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+ggplot(model_metrics_melted, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black") +
+  labs(title = "Comparison of all Models",
+       y = "Metric Value",
+       x = "Model") +
+  scale_fill_manual(values = c("Accuracy" = "skyblue", "Precision" = "yellow")) +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.2f", Value), y = Value), vjust = -0.5, position = position_dodge(width = 0.9))
+```
+
+# CURVE ROC COMPARISON EVERY MODEL
+```{r}
+library(pROC)
+
+plot(RFROC, col = "skyblue", main = "Merge ROC Curves", lwd = 2, cex.main = 1.5, cex.lab = 1.2, cex.axis = 1.2)
+lines(DTROC, col = "yellow", lwd = 2)
+lines(KNNROC, col = "green", lwd = 2)
+lines(NBROC, col = "black", lwd = 2)
+lines(LRROC, col = "red", lwd = 2)
+legend("bottomright", legend = c("Random Forest", "Decision Tree", "KNN", "Naive Bayes", "Logistic Regression"),
+       col = c("skyblue", "yellow", "green", "black", "red"), lwd = 2)
+
+```
+
+# PERBANDINGAN AUC SETIAP MODEL MENGGUNAKAN BAR CHART VISUALIASI
+```{r}
+# Perbandingan AUC Setiap Model
+model_auc <- c(auc(RFROC), auc(DTROC), auc(KNNROC), auc(NBROC), auc(LRROC))
+
+# Visualisasi dengan bar plot
+barplot(model_auc, names.arg = c("Random Forest", "DTree", "KNN", "Naive Bayes", "LRegression"),
+        col = c("skyblue", "yellow", "green", "black", "red"),
+        main = "Perbandingan AUC Setiap Model",
+        xlab = "Model", ylab = "AUC", ylim = c(0, 1.1),
+        cex.main = 1, cex.lab = 0.7, cex.axis = 1)
+text(seq_along(model_auc), model_auc + 0.01, labels = sprintf("%.3f", model_auc),
+     cex = 1, col = "red", pos = 3)
+
+```
+
+
+# Menurut kami setelah menggunakan lima model yang berbeda yaitu Random Forest, KNN, Naive Beyes, Decision Tree, dan Logistic Regresi. Logistic Regresi merupakan model yang terbaik yang dapat digunakan untuk dataset kali ini,Naive beyesmemiliki nilai presisi yang tertinggi yaitu sebesar 94% dan juga Logistic Regresi memiliki akurasi  tertinggi dengan nilai 94% serta AUC Logistic Regresi juga adalah yang tertinggi yaitu 0.984375
+
+```{r}
+library(shiny)
+library(shinydashboard)
+library(e1071)
+library(shinyjs)
+
+ui=fluidPage(
+  titlePanel("IEDU Prediction Tool"),
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("Ranking_Uni_Asal","Ranking Uni Asal (1-5)", value=1),
+      numericInput("IPK","IPK (0-4) boleh koma: ", value=0),
+       selectInput("RISET", "Apakah Anda Melakukan Riset Sebelumnya", choices = c("Ya", "Tidak"), 
+                  selected = "Ya"),
+      numericInput("GRE", "Skor GRE", value = 0),
+      numericInput("TOEFL", "Skor TOEFL", value = 0),
+      numericInput("MOT_LETTER", "Skor Motivation Letter (1-5)", value = 0),
+      numericInput("REKOM_LETTER", "Skor Rekomendasi Letter (1-5)", value = 0),
+      actionButton("predict", "predict")
+    ), 
+    mainPanel(
+      textOutput("hasil")
+    )
+  )
+)
+
+server <- function(input, output) {
+  observeEvent(input$predict, {
+    predictions_IEDU <- predict(LRModel, 
+                                newdata = data.frame(
+                                  Ranking_Uni_Asal = input$Ranking_Uni_Asal,
+                                  IPK = input$IPK,
+                                  RISET = input$RISET,
+                                  GRE = input$GRE,
+                                  TOEFL = input$TOEFL,
+                                  MOT_LETTER = input$MOT_LETTER,
+                                  REKOM_LETTER = input$REKOM_LETTER
+                                ),)
+  
+    result <- ifelse(predictions_IEDU > 0.5, "LULUS", "TIDAK LULUS")
+    
+    output$hasil <- renderText({
+      paste("Hasil Prediksi IEDU Anda adalah: ", result)
+    })
+  })
+}
+
+shinyApp(ui, server)
+
+```
 
